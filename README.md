@@ -38,7 +38,7 @@ To enable dissemination of validated ASKAP FRB triggers to the wider astronomica
 - Guaranteed continuous observing time on MWA
 
 ## 3. High-Level System Architecture
-![ASKAP–CRACO–MWA trigger flow](fig/architecture.png)
+![ASKAP–CRACO–MWA trigger flow](fig/overview.png)
 
 **Key principle:**  
 The project builds on top of existing CRACO operations without disrupting the running pipeline.
