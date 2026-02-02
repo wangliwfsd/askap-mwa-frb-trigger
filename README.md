@@ -182,7 +182,4 @@ Includes:
 ---
 
 
----
-
-## 3. High-Level System Architecture
 
