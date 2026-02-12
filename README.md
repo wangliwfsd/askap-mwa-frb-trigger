@@ -169,16 +169,19 @@ Includes:
 ## 13. Current Status & Next Steps
 
 ### Current Status
-- Project scope aligned
-- MVP definition agreed
-- Key stakeholders identified
+- Project scope aligned ✅
+- MVP definition agreed ✅
+- Key stakeholders identified 
 
 ### Immediate Next Steps
 1. Gain CRACO system access  
-2. Identify classification trigger hook  
+2. Identify classification trigger hook  ✅
 3. Define initial MWA observation template  
 4. Implement and test MVP trigger path  
-
+5. Test on fake udp trigger. 
+6. Identify trigger signal requirement.
+7. Deploy with systmd. No real MWA trigger. 
+8. Observe trigger signal, and comfirm with other expert on the trigger signal format. 
 ---
 
 
