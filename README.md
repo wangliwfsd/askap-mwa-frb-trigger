@@ -1,3 +1,4 @@
+
 # ASKAP–MWA FRB Rapid-Response Triggering Project  
 **Project Summary & Implementation Plan**
 
@@ -5,188 +6,165 @@
 
 ## 1. Project Overview
 
-### 1.1 Background
 Fast Radio Bursts (FRBs) detected by ASKAP can benefit significantly from rapid, low-frequency follow-up observations with the Murchison Widefield Array (MWA). With the recent commissioning of the CRACO coherent pipeline, ASKAP is now capable of producing low-latency, well-localised FRB candidates suitable for triggering rapid-response observations.
 
 This project aims to establish a reliable, low-latency triggering pathway from ASKAP/CRACO FRB candidates to MWA observations.
 
----
+## 2. Architecture
+### 2.1 Design
+```
+UDP → Queue → HTTP trigger
+```
 
-### 1.2 Project Goal
+### 2.2 Components
 
-**Primary objective (MVP):**  
-To implement a stable, end-to-end pipeline that triggers MWA observations in response to FRB candidates identified by the CRACO system.
+**UDP Receiver Thread**
 
-**Secondary / long-term objective:**  
-To enable dissemination of validated ASKAP FRB triggers to the wider astronomical community (e.g. via GCN).
+- Listens on configured UDP port
+- Parses candidate lines (CAND_FORMAT)
+- Enqueues parsed tasks
+- Never performs HTTP
 
----
+**HTTP Worker Thread**
 
-## 2. Scope and Non-Scope
+- Dequeues candidate tasks
+- Converts cand_mjd → GPS seconds
 
-### 2.1 In Scope
-- Integration with the existing, operational CRACO system  
-- Hooking into the CRACO **classification stage**  
-- Triggering MWA via the existing **HTTP-based rapid-response interface**  
-- MVP testing and validation using real or test triggers  
-- Logging, monitoring, and basic robustness checks  
+- Builds TriggerBuffer URL
 
-### 2.2 Out of Scope (for MVP)
-- Modifications to the CRACO detection or classification algorithms  
-- Security redesign of the MWA triggering API (HTTP / plaintext keys)  
-- Full production-grade alert distribution infrastructure  
-- Guaranteed continuous observing time on MWA
+- Sends HTTP GET request
 
-## 3. High-Level System Architecture
-![ASKAP–CRACO–MWA trigger flow](fig/overview.png)
+This prevents HTTP latency from blocking UDP reception.
 
-**Key principle:**  
-The project builds on top of existing CRACO operations without disrupting the running pipeline.
+## 3. Candidate Format
 
----
+The incoming UDP packet must follow:
+```
+%0.2f %lu %0.4f %d %d %0.2f %d %0.9f\n
+```
+
+Meaning:
+
+| Field           | Description                          |
+|-----------------|--------------------------------------|
+| sn              | Signal-to-noise ratio                |
+| tfile           | Sample number from file start        |
+| time_from_file  | Seconds from file start              |
+| ibc             | Boxcar width                         |
+| idt             | DM trial index                       |
+| dm              | Dispersion measure (pc/cm³)          |
+| ibeam           | Beam number                          |
+| cand_mjd        | Candidate time (MJD)                 |
 
 
+Note: RA/Dec are not included. TriggerBuffer does not require sky position.
 
+## 3. MWA TriggerBuffer Integration
 
+Based on the official documentation:
 
-## 4. Triggering Logic
+https://mwatelescope.atlassian.net/wiki/spaces/MP/pages/24972656/Triggering+web+services
 
-### 4.1 Trigger Signal
-- Trigger condition:  
-  **CRACO classification identifies an unknown source / FRB candidate**
-- Trigger is **event-based**, not observation-state-based
+TriggerBuffer requires:
+- project_id
+- secure_key
+- start_time (GPS seconds)
+- obstime (seconds)
 
-### 4.2 Trigger Action
-Upon trigger:
-1. Extract relevant candidate metadata (time, position, confidence, etc.)
-2. Package metadata into MWA-compatible trigger parameters
-3. Send HTTP POST request to the MWA triggering endpoint  
-   - Authentication via plaintext key (current MWA mechanism)
-4. Log trigger outcome and metadata for traceability
+Pointing direction and frequency setup are inherited from the currently running MWA observation.
 
----
+This script does **NOT** change MWA pointing.
 
-## 5. CRACO Integration
+## 4. Configuration
+### 4.1. Set Secure Key (Required)
+``` bash
+export TRIGGER_SECURE_KEY="your_secret_here"
+```
 
-### 5.1 Required Access
-- Access to CRACO compute environment
-- Read access to running pipeline outputs and logs
+The secure key is never stored in code.
 
-### 5.2 Classification Hook
-- Identify existing CRACO script responsible for post-classification actions
-- Insert trigger call at appropriate decision point
-- Ensure minimal latency and no interference with existing operations
+### 4.2 Usage
 
----
+Example:
+```bash
+python3 udp_to_triggerbuffer.py 0.0.0.0:4900 \
+  --endpoint http://mro.mwa128t.org/trigger/triggerbuffer \
+  --project-id C001 \
+  --past-seconds 120 \
+  --obstime 600 \
+  --use-start-zero \
+  --workers 1 \
+  -v
+```
 
-## 6. MWA Integration
+### 4.3 Parameters
 
-### 6.1 Trigger Mechanism
-- HTTP-based MWA triggering endpoint
-- Parameters passed via URL query
-- Plaintext key authentication (existing mechanism)
+#### Required
 
-### 6.2 Observation Parameters
-To be defined jointly with:
-- Science leads (e.g. Clancy, Kat)
-- MWA technical support (Andrew Williams)
-
-Includes:
-- Frequency setup
-- Integration time
-- VCS configuration
-
----
-
-## 7. MVP Definition
-
-### 7.1 MVP Success Criteria
-- End-to-end trigger from CRACO classification to MWA execution
-- Demonstrated low latency and stability
-- Successful test observations (with or without FRB detection)
-- Clear logging and traceability of trigger events
-
-### 7.2 MVP Limitations
-- Limited trigger rate
-- Testing-focused usage
-- No external alert distribution
+| Argument   | Description        |
+|------------|-------------------|
+| host:port  | UDP bind address  |
 
 ---
 
-## 8. Testing and Validation Plan
+#### Important
 
-- Offline testing with simulated candidates
-- On-sky testing via MWA rapid-response capability
-- Measurement of:
-  - Trigger latency
-  - False trigger rate
-  - System robustness
-- Iterative refinement before production use
-
----
-
-## 9. MWA Observing Strategy and Proposals
-
-- Initial testing may proceed **without a formal MWA proposal**
-- Formal proposal to be submitted once:
-  - System stability is demonstrated
-  - Event rates are characterised
-- Ongoing communication with MWA team to manage scheduling constraints
+| Argument | Description |
+|----------|------------|
+| --endpoint | TriggerBuffer URL |
+| --project-id | MWA project ID |
+| --past-seconds | Seconds before candidate time to dump |
+| --obstime | Seconds to capture into the future |
+| --use-start-zero | Use start_time=0 (recommended for continued capture triggers) |
 
 ---
 
-## 10. Future Extensions (Post-MVP)
+#### Optional
 
-- Integration with alert dissemination systems (e.g. GCN)
-- Standardised FRB alert schema
-- Multi-observatory triggering support
-- Improved security and authentication mechanisms
+| Argument | Description |
+|----------|------------|
+| --workers | Number of HTTP worker threads |
+| --min-trigger-interval | Minimum seconds between triggers |
+| --pretend | Dry-run mode |
+| --pretty | Pretty JSON output from MWA |
+| --retries | HTTP retry attempts |
+| --verbose | Enable debug logging |
 
----
+### Deployment Recommendation
 
-## 11. Roles and Responsibilities
+Run as a systemd service on a dedicated node.
 
-| Role | Responsibility |
-|-----|----------------|
-| CRACO team | Candidate generation & classification |
-| Trigger developer | Integration & MWA triggering logic |
-| MWA support | Observation configuration & execution |
-| Science leads | Scientific validation & strategy |
+Example service file:
+```ini
+[Unit]
+Description=ASKAP to MWA Trigger Bridge
+After=network.target
 
----
+[Service]
+User=trigger
+WorkingDirectory=/opt/askap-mwa-trigger
+Environment=TRIGGER_SECURE_KEY=your_secret_here
+ExecStart=/opt/venv/bin/python udp_to_triggerbuffer.py 0.0.0.0:4900 --endpoint http://mro.mwa128t.org/trigger/triggerbuffer --use-start-zero --obstime 600
+Restart=always
 
-## 12. Risks and Mitigations
+[Install]
+WantedBy=multi-user.target
+```
 
-| Risk | Mitigation |
-|------|------------|
-| Delayed system access | Early coordination, backup contacts |
-| Scheduling conflicts | Ongoing communication with MWA |
-| False triggers | Conservative thresholds during MVP |
-| Latency issues | Minimal processing in trigger hook |
+### Assumptions
 
----
+- UDP is broadcast on ASKAP internal network
+- Packet loss is assumed negligible
+- Candidate spacing typically >5 seconds
+- MWA trigger interface uses HTTP (not HTTPS)
 
-## 13. Current Status & Next Steps
+**Important**: The secure key is transmitted in plaintext because the MWA trigger service is HTTP-only.
 
-### Current Status
-- Project scope aligned ✅
-- MVP definition agreed ✅
-- Key stakeholders identified 
-
-### Immediate Next Steps
-1. Gain CRACO system access  
-2. Identify classification trigger hook  ✅
-3. Define initial MWA observation template  
-4. Implement and test MVP trigger path  
-5. Test on fake udp trigger. 
-6. Identify trigger signal requirement.
-7. Deploy with systmd. No real MWA trigger. 
-8. Observe trigger signal, and comfirm with other expert on the trigger signal format. 
----
-
-# dev note:
-
-
-python snoopy_sender.py   --snr 12.3 --total_sample 123456 --obstime_sec 10.5   --boxc_width 4 --dm 300 --dm_pccm3 299   --ibeam 7 --mjd 60345.123456789   --host 127.0.0.1 --port 4900
-
-python udp_listener.py 127.0.0.1:4900
+### Reproduction note:
+```
+python==3.12.3
+astropy==7.2.0
+numpy==2.3.5
+requests==2.32.5
+urllib3==2.6.3
+```
