@@ -184,5 +184,9 @@ Includes:
 8. Observe trigger signal, and comfirm with other expert on the trigger signal format. 
 ---
 
+# dev note:
 
 
+python snoopy_sender.py   --snr 12.3 --total_sample 123456 --obstime_sec 10.5   --boxc_width 4 --dm 300 --dm_pccm3 299   --ibeam 7 --mjd 60345.123456789   --host 127.0.0.1 --port 4900
+
+python udp_listener.py 127.0.0.1:4900
