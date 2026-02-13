@@ -190,3 +190,29 @@ Includes:
 python snoopy_sender.py   --snr 12.3 --total_sample 123456 --obstime_sec 10.5   --boxc_width 4 --dm 300 --dm_pccm3 299   --ibeam 7 --mjd 60345.123456789   --host 127.0.0.1 --port 4900
 
 python udp_listener.py 127.0.0.1:4900
+
+python3 udp_to_triggerbuffer.py 0.0.0.0:4900 \
+  --past-seconds 120 \
+  --obstime 600 \
+  --endpoint http://127.0.0.1:8080/trigger
+  
+  http://mro.mwa128t.org/trigger/triggerbuffer
+
+
+
+##Test on fake udp trigger. 
+1. Decoupling, queues, idempotency, rate limiting/retry
+Packet loss? Interval?
+Secret manager？
+Secret via http
+
+2. udp_trigger_http.py
+UDP -> Queue -> HTTP trigger
+
+Design:
+- UDP receiver thread: receive, parse, enqueue (fast, never do HTTP here)
+- HTTP worker thread(s): dequeue, build URL, send HTTP request(s)
+
+One UDP message => one URL trigger.
+
+
