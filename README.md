@@ -87,8 +87,8 @@ The secure key is never stored in code.
 
 Example:
 ```bash
-python3 udp_to_triggerbuffer.py 0.0.0.0:4900 \
-  --endpoint http://mro.mwa128t.org/trigger/triggerbuffer \
+python3 udp_to_triggerbuffer.py 224.1.1.1:4900 \
+  --endpoint http://127.0.0.1:8080/trigger \
   --project-id C001 \
   --past-seconds 120 \
   --obstime 600 \
@@ -96,7 +96,10 @@ python3 udp_to_triggerbuffer.py 0.0.0.0:4900 \
   --workers 1 \
   -v
 ```
-
+Note: For local test, need to add loopback
+``` bash
+sudo ip route add 224.1.1.1/32 dev lo
+```
 ### 4.3 Parameters
 
 #### Required
