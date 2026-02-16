@@ -135,7 +135,7 @@ sudo ip route add 224.1.1.1/32 dev lo
 
 ### Deployment Recommendation
 
-Run as a systemd service on a dedicated node.
+1. Run as a systemd service on a dedicated node.
 
 Example service file:
 ```ini
@@ -147,11 +147,24 @@ After=network.target
 User=trigger
 WorkingDirectory=/opt/askap-mwa-trigger
 Environment=TRIGGER_SECURE_KEY=your_secret_here
-ExecStart=/opt/venv/bin/python udp_to_triggerbuffer.py 0.0.0.0:4900 --endpoint http://mro.mwa128t.org/trigger/triggerbuffer --use-start-zero --obstime 600
+ExecStart=/opt/venv/bin/python udp_to_triggerbuffer.py 224.1.1.1:4900 --endpoint http://127.0.0.1:8080/trigger --project-id C001 --past-seconds 120 --obstime 600 --use-start-zero --workers 1 
 Restart=always
 
 [Install]
 WantedBy=multi-user.target
+```
+
+2. Docker
+
+For deployment:
+``` bash
+sudo docker build -t askap-mwa-trigger:latest .
+sudo docker run --rm -it   --network host   -e TRIGGER_SECURE_KEY="IAmASecret"
+```
+For test the docker:
+```bash
+sudo docker run --rm -it   --network host   -e TRIGGER_SECURE_KEY="IAmASecret"   askap-mwa-trigger:latest 224.1.1.1:4900   --endpoint http://127.0.0.1:8080/trigger   --project-id C001   --use-sta
+rt-zero   --obstime 600   --workers 1   -v
 ```
 
 ### Assumptions
