@@ -233,6 +233,7 @@ class TriggerBufferWorker(threading.Thread):
         max_retries: int = 2,
         retry_backoff_sec: float = 0.5,
         verbose: bool = False,
+        debug_url: Optional[str] = None,
     ):
         super().__init__(daemon=True, name=name)
         self.in_queue = in_queue
@@ -251,6 +252,7 @@ class TriggerBufferWorker(threading.Thread):
         self.max_retries = max_retries
         self.retry_backoff_sec = retry_backoff_sec
         self.verbose = verbose
+        self.debug_url = debug_url.rstrip("?") if debug_url else None
 
         self.session = requests.Session()
 
@@ -287,6 +289,32 @@ class TriggerBufferWorker(threading.Thread):
 
         return f"{self.endpoint}?{urlencode(params)}"
 
+    def send_debug_event(self, task: UdpTask) -> None:
+        """Send all parsed fields + metadata to the debug URL (fire-and-forget)."""
+        if not self.debug_url:
+            return
+        sn, tfile, time_from_file, ibc, idt, dm, ibeam, cand_mjd = task.fields
+        params = {
+            "sn": f"{sn:.2f}",
+            "tfile": str(tfile),
+            "time_from_file": f"{time_from_file:.4f}",
+            "ibc": str(ibc),
+            "idt": str(idt),
+            "dm": f"{dm:.2f}",
+            "ibeam": str(ibeam),
+            "cand_mjd": f"{cand_mjd:.9f}",
+            "sender_ip": task.addr[0],
+            "sender_port": str(task.addr[1]),
+        }
+        debug_full_url = f"{self.debug_url}?{urlencode(params)}"
+        try:
+            resp = self.session.get(debug_full_url, timeout=self.timeout)
+            if self.verbose:
+                print(f"[debug] {resp.status_code} GET {debug_full_url}")
+        except Exception as e:
+            if self.verbose:
+                print(f"[debug] Failed to send debug event: {e!r}")
+
     def _allowed_to_trigger_now(self) -> bool:
         if self.min_trigger_interval_sec <= 0:
             return True
@@ -314,6 +342,9 @@ class TriggerBufferWorker(threading.Thread):
                     task = self.in_queue.get(timeout=0.5)
                 except queue.Empty:
                     continue
+
+                # send all fields to debug URL if configured
+                self.send_debug_event(task)
 
                 # basic rate limit to avoid hammering trigger service
                 if not self._allowed_to_trigger_now():
@@ -395,6 +426,8 @@ def main():
                     help="If set, block briefly when queue is full instead of dropping")
 
     ap.add_argument("-v", "--verbose", action="store_true")
+    ap.add_argument("--debug-url", default=None,
+                    help="If set, send ALL parsed UDP fields to this URL for every received candidate (debug mode)")
     args = ap.parse_args()
 
     # Validate secure key exists early (fail fast)
@@ -428,6 +461,7 @@ def main():
             timeout=(args.timeout_connect, args.timeout_read),
             max_retries=args.retries,
             verbose=args.verbose,
+            debug_url=args.debug_url,
         )
         for i in range(args.workers)
     ]
