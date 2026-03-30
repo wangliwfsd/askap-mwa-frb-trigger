@@ -1,0 +1,6 @@
+{"received_utc": "2026-03-30T06:32:29.019Z", "sn": "12.30", "tfile": "123456", "time_from_file": "10.5000", "ibc": "4", "idt": "300", "dm": "299.00", "ibeam": "7", "cand_mjd": "60345.123456789", "sender_ip": "10.0.0.240", "sender_port": "38321"}
+{"received_utc": "2026-03-30T06:32:29.125Z", "sn": "", "tfile": "", "time_from_file": "", "ibc": "", "idt": "", "dm": "", "ibeam": "", "cand_mjd": "", "sender_ip": "", "sender_port": ""}
+{"received_utc": "2026-03-30T06:32:39.378Z", "sn": "12.30", "tfile": "123456", "time_from_file": "10.5000", "ibc": "4", "idt": "300", "dm": "299.00", "ibeam": "7", "cand_mjd": "60345.123456789", "sender_ip": "10.0.0.240", "sender_port": "59745"}
+{"received_utc": "2026-03-30T06:32:39.381Z", "sn": "", "tfile": "", "time_from_file": "", "ibc": "", "idt": "", "dm": "", "ibeam": "", "cand_mjd": "", "sender_ip": "", "sender_port": ""}
+{"received_utc": "2026-03-30T06:34:25.139Z", "sn": "12.30", "tfile": "123456", "time_from_file": "10.5000", "ibc": "4", "idt": "300", "dm": "299.00", "ibeam": "7", "cand_mjd": "60345.123456789", "sender_ip": "10.0.0.240", "sender_port": "39247"}
+{"received_utc": "2026-03-30T06:34:25.238Z", "sn": "", "tfile": "", "time_from_file": "", "ibc": "", "idt": "", "dm": "", "ibeam": "", "cand_mjd": "", "sender_ip": "", "sender_port": ""}
