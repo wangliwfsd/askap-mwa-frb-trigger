@@ -103,6 +103,12 @@ class CandidateHandler(http.server.BaseHTTPRequestHandler):
     def log_message(self, *_):
         pass  # suppress default access log
 
+    def handle(self):
+        try:
+            super().handle()
+        except ConnectionResetError:
+            print(f"[scanner] {self.client_address[0]} reset connection (ignored)")
+
     def handle_error(self, request, client_address):
         import traceback, sys
         exc = sys.exc_info()[1]
