@@ -34,6 +34,9 @@ EXPECTED_FIELDS = [
 
 CSV_HEADER = ["received_utc"] + EXPECTED_FIELDS
 
+# Fields that indicate a real debug/trigger event
+TRIGGER_FIELDS = {"sn", "dm", "ibeam", "cand_mjd", "sender_ip"}
+
 
 def utc_now_iso() -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%f")[:-3] + "Z"
@@ -44,27 +47,37 @@ class CandidateHandler(http.server.BaseHTTPRequestHandler):
     # injected by main before server starts
     log_file: str = "data/candidates.jsonl"
     csv_file: str = "data/candidates.csv"
+    access_log_file: str = "log/access.log"
     verbose: bool = True
     _csv_initialized: bool = False
     _lock: threading.Lock = threading.Lock()
 
     def do_GET(self):
+        received = utc_now_iso()
         parsed = urllib.parse.urlparse(self.path)
         params = {k: v[0] for k, v in urllib.parse.parse_qs(parsed.query).items()}
-        received = utc_now_iso()
 
-        record = {"received_utc": received}
-        record.update({f: params.get(f, "") for f in EXPECTED_FIELDS})
+        # Always log the raw URL
+        self._write_access_log(received, self.path)
 
-        self._write_jsonl(record)
-        self._write_csv(record)
-
-        if self.verbose:
-            self._print_record(record)
+        # Only parse and record if this looks like a real debug/trigger event
+        if TRIGGER_FIELDS & set(params.keys()):
+            record = {"received_utc": received}
+            record.update({f: params.get(f, "") for f in EXPECTED_FIELDS})
+            self._write_jsonl(record)
+            self._write_csv(record)
+            if self.verbose:
+                self._print_record(record)
 
         self.send_response(200)
         self.end_headers()
         self.wfile.write(b"ok")
+
+    def _write_access_log(self, received: str, url: str) -> None:
+        with self._lock:
+            os.makedirs(os.path.dirname(os.path.abspath(self.access_log_file)), exist_ok=True)
+            with open(self.access_log_file, "a", encoding="utf-8") as f:
+                f.write(f"{received} {self.client_address[0]} {url}\n")
 
     def _write_jsonl(self, record: dict) -> None:
         with self._lock:
@@ -90,6 +103,14 @@ class CandidateHandler(http.server.BaseHTTPRequestHandler):
     def log_message(self, *_):
         pass  # suppress default access log
 
+    def handle_error(self, request, client_address):
+        import traceback, sys
+        exc = sys.exc_info()[1]
+        if isinstance(exc, ConnectionResetError):
+            print(f"[scanner] {client_address[0]} reset connection (ignored)")
+        else:
+            traceback.print_exc()
+
 
 def main():
     ap = argparse.ArgumentParser(description="HTTP receiver for FRB candidate debug events")
@@ -110,17 +131,23 @@ def main():
     os.makedirs(os.path.dirname(log_file), exist_ok=True)
     os.makedirs(os.path.dirname(csv_file), exist_ok=True)
 
+    # Resolve access log path
+    access_log_file = os.path.join(base_dir, "log/access.log")
+    os.makedirs(os.path.dirname(access_log_file), exist_ok=True)
+
     # Inject config into handler class
     CandidateHandler.log_file = log_file
     CandidateHandler.csv_file = csv_file
+    CandidateHandler.access_log_file = access_log_file
     CandidateHandler.verbose = not args.quiet
     CandidateHandler._lock = threading.Lock()
 
     server = http.server.ThreadingHTTPServer((args.host, args.port), CandidateHandler)
 
     print(f"[receiver] Listening on {args.host}:{args.port}")
-    print(f"[receiver] JSONL log : {log_file}")
-    print(f"[receiver] CSV  log  : {csv_file}")
+    print(f"[receiver] JSONL log  : {log_file}")
+    print(f"[receiver] CSV  log   : {csv_file}")
+    print(f"[receiver] Access log : {access_log_file}")
     print("[receiver] Ctrl+C to stop")
 
     t = threading.Thread(target=server.serve_forever, daemon=True)
