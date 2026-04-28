@@ -12,6 +12,7 @@ past dump seconds is configurable via --past-seconds
 """
 
 import argparse
+import collections
 import os
 import queue
 import socket
@@ -229,6 +230,10 @@ class TriggerBufferWorker(threading.Thread):
         # behavior knobs:
         use_start_time_zero: bool,
         min_trigger_interval_sec: float,
+        min_sn: float = 20.0,
+        min_dm: float = 0.0,
+        burst_window_sec: float = 1.0,
+        burst_max_count: int = 10,
         timeout: Tuple[float, float] = (2.0, 10.0),  # connect, read
         max_retries: int = 2,
         retry_backoff_sec: float = 0.5,
@@ -247,6 +252,11 @@ class TriggerBufferWorker(threading.Thread):
         self.pretend = bool(pretend)
         self.use_start_time_zero = bool(use_start_time_zero)
         self.min_trigger_interval_sec = float(min_trigger_interval_sec)
+        self.min_sn = float(min_sn)
+        self.min_dm = float(min_dm)
+        self.burst_window_sec = float(burst_window_sec)
+        self.burst_max_count = int(burst_max_count)
+        self._burst_timestamps: collections.deque = collections.deque()
 
         self.timeout = timeout
         self.max_retries = max_retries
@@ -325,6 +335,18 @@ class TriggerBufferWorker(threading.Thread):
                 return True
             return False
 
+    def _is_burst(self) -> bool:
+        """Return True if too many candidates arrived within burst_window_sec."""
+        if self.burst_max_count <= 0:
+            return False
+        now = time.monotonic()
+        with self._lock:
+            self._burst_timestamps.append(now)
+            cutoff = now - self.burst_window_sec
+            while self._burst_timestamps and self._burst_timestamps[0] < cutoff:
+                self._burst_timestamps.popleft()
+            return len(self._burst_timestamps) > self.burst_max_count
+
     def run(self) -> None:
         if not _HAS_ASTROPY:
             # Print once per worker (could be multiple lines if many workers)
@@ -345,6 +367,26 @@ class TriggerBufferWorker(threading.Thread):
 
                 # send all fields to debug URL if configured
                 self.send_debug_event(task)
+
+                sn, _, _, _, _, dm, _, _ = task.fields
+                if sn < self.min_sn:
+                    if self.verbose:
+                        print(f"[filter] Skipped (SNR {sn:.2f} < {self.min_sn}): from {task.addr}")
+                    self.in_queue.task_done()
+                    continue
+
+                if dm < self.min_dm:
+                    if self.verbose:
+                        print(f"[filter] Skipped (DM {dm:.2f} < {self.min_dm}): from {task.addr}")
+                    self.in_queue.task_done()
+                    continue
+
+                if self._is_burst():
+                    if self.verbose:
+                        print(f"[filter] Skipped (burst: >{self.burst_max_count} candidates "
+                              f"in {self.burst_window_sec}s): from {task.addr}")
+                    self.in_queue.task_done()
+                    continue
 
                 # basic rate limit to avoid hammering trigger service
                 if not self._allowed_to_trigger_now():
@@ -412,6 +454,15 @@ def main():
                     help="If set, use start_time=0 (recommended for continued capturing triggers). "
                          "If not set, start_time=candidate_gps - past_seconds")
 
+    ap.add_argument("--min-sn", type=float, default=20.0,
+                    help="Minimum signal-to-noise ratio to forward a trigger (default: 20.0)")
+    ap.add_argument("--min-dm", type=float, default=0.0,
+                    help="Minimum dispersion measure (pc/cm^3) to forward a trigger (default: 0.0)")
+    ap.add_argument("--burst-window", type=float, default=1.0,
+                    help="Time window in seconds for burst detection (default: 1.0)")
+    ap.add_argument("--burst-max-count", type=int, default=10,
+                    help="Max candidates allowed within --burst-window before suppressing trigger (default: 10)")
+
     ap.add_argument("--min-trigger-interval", type=float, default=2.0,
                     help="Minimum seconds between triggers to avoid spamming (0 disables). Default 2s")
 
@@ -458,6 +509,10 @@ def main():
             pretend=args.pretend,
             use_start_time_zero=args.use_start_zero,
             min_trigger_interval_sec=args.min_trigger_interval,
+            min_sn=args.min_sn,
+            min_dm=args.min_dm,
+            burst_window_sec=args.burst_window,
+            burst_max_count=args.burst_max_count,
             timeout=(args.timeout_connect, args.timeout_read),
             max_retries=args.retries,
             verbose=args.verbose,
