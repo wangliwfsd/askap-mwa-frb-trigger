@@ -1,0 +1,17 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+
+# Personal notes
+Notes.md
+
+# Runtime data
+receiver/data/candidates.jsonl
+receiver/data/candidates.csv
+receiver/log/
+
+# Local credentials
+.env
+trigger_records.csv
+trigger_records.csv.*.bak

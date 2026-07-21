@@ -1,18 +1,21 @@
 [Unit]
-Description=ASKAP/MWA FRB UDP to TriggerBuffer
-After=network.target
+Description=ASKAP/MWA FRB UDP to buffer and all-sky VCS trigger
+After=network-online.target
+Wants=network-online.target
 
 [Service]
 Type=simple
 User=ubuntu
 WorkingDirectory=/home/ubuntu/askap-mwa-frb-trigger
-Environment=TRIGGER_SECURE_KEY=test_key_here
+EnvironmentFile=-/etc/askap-mwa-trigger.env
 ExecStart=/home/ubuntu/craco-python/venv/bin/python3 /home/ubuntu/askap-mwa-frb-trigger/udp_to_triggerbuffer.py \
     224.1.1.1:4900 \
-    --endpoint http://trigger.liwang.link/trigger \
-    --debug-url http://trigger.liwang.link/debug \
     --past-seconds 120 \
     --obstime 600 \
+    --min-sn 20 \
+    --min-dm 0 \
+    --burst-window 1 \
+    --burst-max-count 10 \
     -v
 
 Restart=on-failure

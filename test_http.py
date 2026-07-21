@@ -14,7 +14,7 @@ import time
 import urllib.parse
 
 HTTP_HOST = "0.0.0.0"
-HTTP_PORT = int(sys.argv[1]) if len(sys.argv) > 1 else 8080
+HTTP_PORT = 8080
 
 
 class LogHandler(http.server.BaseHTTPRequestHandler):
@@ -33,9 +33,10 @@ class LogHandler(http.server.BaseHTTPRequestHandler):
 
 
 if __name__ == "__main__":
-    srv = http.server.HTTPServer((HTTP_HOST, HTTP_PORT), LogHandler)
+    port = int(sys.argv[1]) if len(sys.argv) > 1 else HTTP_PORT
+    srv = http.server.HTTPServer((HTTP_HOST, port), LogHandler)
     threading.Thread(target=srv.serve_forever, daemon=True).start()
-    print(f"[monitor] Listening on {HTTP_HOST}:{HTTP_PORT}  (Ctrl+C to stop)")
+    print(f"[monitor] Listening on {HTTP_HOST}:{port}  (Ctrl+C to stop)")
     try:
         while True:
             time.sleep(1.0)
