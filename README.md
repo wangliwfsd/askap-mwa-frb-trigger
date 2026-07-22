@@ -473,3 +473,5 @@ The second command may display raw server responses. Run it only in a private te
 | `--trigger-csv` | `output/trigger_records.csv` | Persistent filtered-candidate and Buffer/VCS audit records |
 
 When using a reverse proxy, set all four endpoint options explicitly if its paths do not match the official `/trigger/{service}` layout.
+
+Acknowledge: This work is finished with the help of GenAI tools. 
