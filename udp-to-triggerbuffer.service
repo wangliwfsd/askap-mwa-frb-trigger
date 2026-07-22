@@ -1,3 +1,6 @@
+# Example defaults use the optional dedicated account and virtual environment.
+# Adjust User, Group, WorkingDirectory, and ExecStart for the deployment site.
+
 [Unit]
 Description=ASKAP/MWA FRB UDP to buffer and all-sky VCS trigger
 After=network-online.target
@@ -5,10 +8,12 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-User=ubuntu
-WorkingDirectory=/home/ubuntu/askap-mwa-frb-trigger
-EnvironmentFile=-/etc/askap-mwa-trigger.env
-ExecStart=/home/ubuntu/craco-python/venv/bin/python3 /home/ubuntu/askap-mwa-frb-trigger/udp_to_triggerbuffer.py \
+User=askap-mwa-trigger
+Group=askap-mwa-trigger
+WorkingDirectory=/opt/askap-mwa-frb-trigger
+EnvironmentFile=/etc/askap-mwa-trigger.env
+UMask=0077
+ExecStart=/opt/askap-mwa-frb-trigger/.venv/bin/python3 /opt/askap-mwa-frb-trigger/udp_to_triggerbuffer.py \
     224.1.1.1:4900 \
     --past-seconds 120 \
     --obstime 600 \

@@ -149,28 +149,50 @@ The deployment host must:
 - provide restricted persistent storage for `trigger_records.csv`;
 - run only one active bridge for a given candidate stream.
 
-### Step 1: install the repository on the CRACO service host
+### Step 1: install the repository
+
+A dedicated, non-login service account is recommended but optional. The example unit uses `askap-mwa-trigger`. If the site already provides a suitable non-personal service account, use it and update `User`, `Group`, and file ownership accordingly.
+
+To create the example account:
 
 ```bash
-cd /home/ubuntu
-git clone git@github.com:wangliwfsd/askap-mwa-frb-trigger.git
-cd askap-mwa-frb-trigger
+sudo useradd --system \
+  --home-dir /var/lib/askap-mwa-trigger \
+  --create-home \
+  --shell /usr/sbin/nologin \
+  askap-mwa-trigger
 ```
 
-If the repository already exists, update it through the site's normal release process instead of cloning it again.
+Clone the repository into its fixed service location. Replace `OWNER` with the repository owner used by the deployment site:
+
+```bash
+REPOSITORY_URL=git@github.com:OWNER/askap-mwa-frb-trigger.git
+sudo git clone "$REPOSITORY_URL" /opt/askap-mwa-frb-trigger
+sudo chown -R askap-mwa-trigger:askap-mwa-trigger \
+  /opt/askap-mwa-frb-trigger
+cd /opt/askap-mwa-frb-trigger
+```
+
+If the service account already exists or the repository is already installed, use the site's normal account and release-management process instead of creating or cloning it again.
 
 ### Step 2: prepare Python
 
-A dedicated virtual environment keeps the bridge dependencies separate from CRACO:
+An independent virtual environment is recommended but optional. The example unit uses `/opt/askap-mwa-frb-trigger/.venv`. A site-managed Python 3.12 environment may be used instead by updating `ExecStart`.
+
+To create the example virtual environment:
 
 ```bash
-cd /home/ubuntu/askap-mwa-frb-trigger
-python3 -m venv .venv
-.venv/bin/python3 -m pip install --upgrade pip
-.venv/bin/python3 -m pip install -r requirements.txt
+sudo -u askap-mwa-trigger \
+  python3 -m venv /opt/askap-mwa-frb-trigger/.venv
+sudo -u askap-mwa-trigger \
+  /opt/askap-mwa-frb-trigger/.venv/bin/python3 \
+  -m pip install --upgrade pip
+sudo -u askap-mwa-trigger \
+  /opt/askap-mwa-frb-trigger/.venv/bin/python3 \
+  -m pip install -r /opt/askap-mwa-frb-trigger/requirements.txt
 ```
 
-The recorded Oracle test used `/home/ubuntu/craco-python/venv/bin/python3`. That tested interpreter may be retained if sharing the CRACO environment is intentional; otherwise update the systemd `ExecStart` path to the dedicated `.venv` shown above.
+The recorded Oracle test reused the CRACO virtual environment for the bridge, but that was specific to the test and is not a required deployment arrangement.
 
 ### Step 3: configure credentials
 
@@ -200,7 +222,8 @@ Do not place the secure key in the source, service command, README, or shared lo
 
 Review `udp-to-triggerbuffer.service` before installing it. At minimum, confirm:
 
-- `User` and `WorkingDirectory` match the CRACO host;
+- `User` and `Group` identify the selected service account;
+- `WorkingDirectory` points to the installed repository;
 - `EnvironmentFile` is `/etc/askap-mwa-trigger.env`;
 - `ExecStart` uses the selected Python environment;
 - the UDP address and port match CRACO;
@@ -223,11 +246,11 @@ source /etc/askap-mwa-trigger.env
 set +a
 ```
 
-Run the bridge in the foreground. This example uses the dedicated environment; substitute the CRACO Python path if that is the selected deployment:
+Run the bridge in the foreground. This example uses the optional independent environment:
 
 ```bash
-/home/ubuntu/askap-mwa-frb-trigger/.venv/bin/python3 \
-  /home/ubuntu/askap-mwa-frb-trigger/udp_to_triggerbuffer.py \
+/opt/askap-mwa-frb-trigger/.venv/bin/python3 \
+  /opt/askap-mwa-frb-trigger/udp_to_triggerbuffer.py \
   224.1.1.1:4900 \
   --past-seconds 120 \
   --obstime 600 \
@@ -325,13 +348,13 @@ Tests cover every filter rejection path and its CSV record, burst suppression, h
 
 ### Recorded pretend integration test on the Oracle host
 
-A pretend integration test was completed on the Oracle `askap-triggering` host on 2026-07-21. It used the CRACO `snoopy_sender.py` from `/home/ubuntu/craco-python` to send one candidate over loopback to the bridge while the bridge was listening on the CRACO multicast port.
+A pretend integration test was completed on an Oracle test host on 2026-07-21. It used CRACO's `snoopy_sender.py` to send one candidate over loopback to the bridge while the bridge was listening on the CRACO multicast port.
 
 The test credentials were supplied through the bridge's local `.env`; no key is included here. Start the bridge in the first terminal:
 
 ```bash
-/home/ubuntu/craco-python/venv/bin/python3 \
-  /home/ubuntu/askap-mwa-frb-trigger/udp_to_triggerbuffer.py \
+/opt/craco-python/venv/bin/python3 \
+  /opt/askap-mwa-frb-trigger/udp_to_triggerbuffer.py \
   224.1.1.1:4900 \
   --pretend \
   --min-sn 12.3 \
@@ -344,11 +367,11 @@ The actual diagnostic run also used `--show-trigger-url`. That option prints `se
 In a second terminal, calculate a current MJD and send a snoopy candidate:
 
 ```bash
-CURRENT_MJD=$(/home/ubuntu/craco-python/venv/bin/python3 -c \
+CURRENT_MJD=$(/opt/craco-python/venv/bin/python3 -c \
   'from astropy.time import Time; print(Time.now().mjd)')
 
-/home/ubuntu/craco-python/venv/bin/python3 \
-  /home/ubuntu/craco-python/src/craco/snoopy_sender.py \
+/opt/craco-python/venv/bin/python3 \
+  /opt/craco-python/src/craco/snoopy_sender.py \
   --snr 12.3 \
   --total_sample 123456 \
   --obstime_sec 10.5 \
@@ -383,7 +406,7 @@ The observation IDs returned by a successful pretend request are dummy IDs and d
 The run also created or appended to:
 
 ```text
-/home/ubuntu/askap-mwa-frb-trigger/trigger_records.csv
+/opt/askap-mwa-frb-trigger/trigger_records.csv
 ```
 
 For this accepted candidate, the CSV received one `triggerbuffer` audit row and one `triggervcs` audit row. Each row contains the safe request parameters, trigger ID, API result, raw API exchanges, and Find verification. The secure key is excluded from request parameters, but raw server response bodies may still contain sensitive information; keep the file at mode `0600` and do not commit or share it.
