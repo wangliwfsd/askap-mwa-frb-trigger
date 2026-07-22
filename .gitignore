@@ -8,9 +8,11 @@ __pycache__/
 Notes.md
 
 # Runtime data
-receiver/data/candidates.jsonl
-receiver/data/candidates.csv
-receiver/log/
+output/*
+!output/.gitkeep
+tools/receiver/data/candidates.jsonl
+tools/receiver/data/candidates.csv
+tools/receiver/log/
 
 # Local credentials
 .env

@@ -21,6 +21,7 @@ ExecStart=/opt/askap-mwa-frb-trigger/.venv/bin/python3 /opt/askap-mwa-frb-trigge
     --min-dm 0 \
     --burst-window 1 \
     --burst-max-count 10 \
+    --trigger-csv /opt/askap-mwa-frb-trigger/output/trigger_records.csv \
     -v
 
 Restart=on-failure

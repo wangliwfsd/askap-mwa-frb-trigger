@@ -6,7 +6,7 @@ UDP candidate stream -> MWA buffer dump and all-sky VCS trigger
 - HTTP worker thread(s): buffer dump, busy check, VCS trigger, and record verification
 
 secure_key is read from environment variable: TRIGGER_SECURE_KEY
-export TRIGGER_SECURE_KEY="IAmASecret"
+export TRIGGER_SECURE_KEY="your_secret_here"
 
 past dump seconds is configurable via --past-seconds
 """
@@ -33,7 +33,7 @@ import requests
 LOG = logging.getLogger("askap_mwa_trigger")
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 DEFAULT_ENV_FILE = os.path.join(SCRIPT_DIR, ".env")
-DEFAULT_TRIGGER_CSV = os.path.join(SCRIPT_DIR, "trigger_records.csv")
+DEFAULT_TRIGGER_CSV = os.path.join(SCRIPT_DIR, "output", "trigger_records.csv")
 TRIGGER_CSV_LOCK = threading.Lock()
 
 

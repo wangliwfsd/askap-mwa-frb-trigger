@@ -40,6 +40,30 @@ Only the ASKAP–MWA Trigger Bridge box is implemented by this repository. Trigg
 
 The UDP receiver and HTTP worker run in separate threads so HTTP latency does not block candidate reception.
 
+### Repository layout
+
+```text
+askap-mwa-frb-trigger/
+├── udp_to_triggerbuffer.py
+├── deploy/
+│   └── systemd/
+│       └── udp-to-triggerbuffer.service
+├── tests/
+│   └── test_trigger_workflow.py
+├── tools/
+│   └── receiver/
+│       ├── receiver.py
+│       └── data/
+│           └── .gitkeep
+├── output/
+│   └── .gitkeep
+├── requirements.txt
+├── README.md
+└── LICENSE
+```
+
+`tools/` contains optional diagnostics and is not part of the normal trigger service. Runtime logs and candidate records are excluded from Git.
+
 ## 2. MWA API behavior
 
 The implementation follows the official [MWA Triggering web services documentation](https://mwatelescope.atlassian.net/wiki/spaces/MP/pages/24972656/Triggering+web+services):
@@ -64,7 +88,7 @@ This client always sends an explicit `pretend` value to both `triggerbuffer` and
 | MWA schedule | Existing observations are not cleared and new observations are not scheduled | May be interrupted or changed according to project permissions and MWA state |
 | MWA data capture | No real buffer/VCS observation is scheduled | Historical buffer data is saved and an all-sky VCS observation is requested |
 | Returned observation IDs | May be dummy IDs | IDs refer to observations actually requested |
-| Logs and `trigger_records.csv` | Written | Written |
+| Logs and `output/trigger_records.csv` | Written | Written |
 
 `--pretend` is therefore an end-to-end validation mode, not a mode that avoids the MWA APIs. A successful pretend response means that the request passed the service checks; it does not mean that MWA data was captured.
 
@@ -146,7 +170,7 @@ The deployment host must:
 - receive the CRACO UDP multicast group `224.1.1.1:4900` or the configured unicast stream;
 - reach the MWA TriggerBuffer, Busy, TriggerVCS, and Find HTTP endpoints;
 - have a synchronized system clock, because candidate MJD values are converted to GPS seconds;
-- provide restricted persistent storage for `trigger_records.csv`;
+- provide restricted local storage for `output/trigger_records.csv`;
 - run only one active bridge for a given candidate stream.
 
 ### Step 1: install the repository
@@ -220,15 +244,16 @@ Do not place the secure key in the source, service command, README, or shared lo
 
 ### Step 4: verify the service settings
 
-Review `udp-to-triggerbuffer.service` before installing it. At minimum, confirm:
+Review `deploy/systemd/udp-to-triggerbuffer.service` before installing it. At minimum, confirm:
 
 - `User` and `Group` identify the selected service account;
 - `WorkingDirectory` points to the installed repository;
 - `EnvironmentFile` is `/etc/askap-mwa-trigger.env`;
+- the local `output/` directory exists and is writable by the service account;
 - `ExecStart` uses the selected Python environment;
 - the UDP address and port match CRACO;
 - `--past-seconds`, `--obstime`, S/N, DM, burst, and rate-limit values are approved;
-- the service user can write `trigger_records.csv` in the working directory.
+- the service user can write `/opt/askap-mwa-frb-trigger/output/trigger_records.csv`.
 
 If the site uses a proxy or nonstandard endpoint paths, add all four reviewed options:
 
@@ -272,7 +297,7 @@ Before proceeding, confirm:
 - logs show `pretend=true` for TriggerBuffer and TriggerVCS;
 - TriggerBuffer, Busy, TriggerVCS, and Find return the expected results;
 - candidate timestamps and historical buffer bounds are correct;
-- `trigger_records.csv` contains the two expected audit rows;
+- `output/trigger_records.csv` contains the two expected audit rows;
 - no real MWA observation was scheduled.
 
 Stop the foreground process with Ctrl+C.
@@ -288,7 +313,7 @@ The included unit is configured for real triggering because its `ExecStart` does
 After reviewing and adjusting the local unit file:
 
 ```bash
-sudo install -m 644 udp-to-triggerbuffer.service \
+sudo install -m 644 deploy/systemd/udp-to-triggerbuffer.service \
   /etc/systemd/system/udp-to-triggerbuffer.service
 sudo systemctl daemon-reload
 sudo systemctl enable --now udp-to-triggerbuffer.service
@@ -307,8 +332,8 @@ When `--pretend` is absent, the script explicitly sends `pretend=false`. This is
 
 ```bash
 sudo journalctl -u udp-to-triggerbuffer.service -f
-stat -c '%a %n' trigger_records.csv
-tail -n 2 trigger_records.csv
+stat -c '%a %n' /opt/askap-mwa-frb-trigger/output/trigger_records.csv
+tail -n 2 /opt/askap-mwa-frb-trigger/output/trigger_records.csv
 ```
 
 For every accepted real candidate, expect TriggerBuffer and TriggerVCS audit rows with corresponding Find verification. Investigate `success=false`, missing trigger IDs, history mismatches, or repeated restarts before leaving the service unattended. CSV rows can contain raw server responses, so inspect them only in a private terminal.
@@ -341,7 +366,7 @@ By default, the secure key and full authenticated request URL are not written to
 ### Unit tests
 
 ```bash
-python3 -m unittest -v
+python3 -m unittest discover -s tests -v
 ```
 
 Tests cover every filter rejection path and its CSV record, burst suppression, historical buffer bounds, all-sky VCS parameters, Find queries by `trigger_id`, call ordering, raw response auditing, successful history verification, and the busy/rejected-VCS path.
@@ -406,7 +431,7 @@ The observation IDs returned by a successful pretend request are dummy IDs and d
 The run also created or appended to:
 
 ```text
-/opt/askap-mwa-frb-trigger/trigger_records.csv
+/opt/askap-mwa-frb-trigger/output/trigger_records.csv
 ```
 
 For this accepted candidate, the CSV received one `triggerbuffer` audit row and one `triggervcs` audit row. Each row contains the safe request parameters, trigger ID, API result, raw API exchanges, and Find verification. The secure key is excluded from request parameters, but raw server response bodies may still contain sensitive information; keep the file at mode `0600` and do not commit or share it.
@@ -414,8 +439,8 @@ For this accepted candidate, the CSV received one `triggerbuffer` audit row and 
 Useful checks after the test are:
 
 ```bash
-stat -c '%a %n' trigger_records.csv
-tail -n 2 trigger_records.csv
+stat -c '%a %n' output/trigger_records.csv
+tail -n 2 output/trigger_records.csv
 ```
 
 The second command may display raw server responses. Run it only in a private terminal.
@@ -443,8 +468,8 @@ The second command may display raw server responses. Run it only in a private te
 | `--burst-window` | `1.0` | Burst safeguard window in seconds |
 | `--burst-max-count` | `10` | Candidates allowed in the burst window |
 | `--min-trigger-interval` | `2.0` | Minimum interval between complete workflows |
-| `--debug-url` | unset | Forward parsed candidates to the companion debug receiver |
+| `--debug-url` | unset | Forward parsed candidates to the optional `tools/receiver/receiver.py` service |
 | `--show-trigger-url` | off | Print full TriggerBuffer/TriggerVCS URLs, including secure key |
-| `--trigger-csv` | `trigger_records.csv` | Persistent filtered-candidate and Buffer/VCS audit records |
+| `--trigger-csv` | `output/trigger_records.csv` | Persistent filtered-candidate and Buffer/VCS audit records |
 
 When using a reverse proxy, set all four endpoint options explicitly if its paths do not match the official `/trigger/{service}` layout.

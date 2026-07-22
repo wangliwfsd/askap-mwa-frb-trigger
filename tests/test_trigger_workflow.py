@@ -4,7 +4,7 @@ Tests for SNR threshold, DM threshold, and burst safeguard filtering
 in TriggerBufferWorker.
 
 Run:
-    python3 test_filters.py
+    python3 -m unittest discover -s tests -v
 """
 
 import collections

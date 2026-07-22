@@ -6,7 +6,7 @@ Receives GET requests from --debug-url and logs all candidate fields
 to a JSONL file and stdout.
 
 Usage:
-    python3 receiver.py [--port PORT] [--log LOG_FILE]
+    python3 tools/receiver/receiver.py [--port PORT] [--log LOG_FILE]
 
 Default port : 8080
 Default log  : data/candidates.jsonl
