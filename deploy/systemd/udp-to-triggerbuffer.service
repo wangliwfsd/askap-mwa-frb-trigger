@@ -16,6 +16,7 @@ UMask=0077
 ExecStart=/opt/askap-mwa-frb-trigger/.venv/bin/python3 /opt/askap-mwa-frb-trigger/udp_to_triggerbuffer.py \
     224.1.1.1:4900 \
     --past-seconds 120 \
+    --handover-margin 10 \
     --obstime 600 \
     --min-sn 20 \
     --min-dm 0 \

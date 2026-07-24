@@ -70,10 +70,10 @@ def make_worker(q, stop, **kwargs):
         project_id="C001",
         secure_key_env="TRIGGER_SECURE_KEY",
         past_seconds=120,
+        handover_margin=10,
         obstime=600,
         pretty=False,
         pretend=True,
-        use_start_time_zero=True,
         min_trigger_interval_sec=0,   # disable interval limit for most tests
         min_sn=20.0,
         min_dm=100.0,
@@ -326,20 +326,22 @@ class TestMwaWorkflow(unittest.TestCase):
             burst_max_count=0,
             obstime=600,
             past_seconds=120,
-            use_start_time_zero=False,
+            handover_margin=10,
             show_endpoint="https://ws.mwatelescope.org/trigger/find",
         )
 
     def tearDown(self):
         self.worker.session.close()
 
-    def test_urls_request_historical_buffer_and_all_sky_vcs(self):
+    @patch("udp_to_triggerbuffer.current_gps_seconds", return_value=1_700_000_000)
+    @patch("udp_to_triggerbuffer.mjd_to_gps_seconds", return_value=1_699_999_900)
+    def test_urls_cover_candidate_through_vcs_handover(
+        self, mock_candidate_gps, mock_current_gps
+    ):
         buffer_url = self.worker.build_triggerbuffer_url(make_task())
         buffer_params = parse_qs(urlsplit(buffer_url).query)
-        self.assertEqual(
-            int(buffer_params["end_time"][0]) - int(buffer_params["start_time"][0]),
-            120,
-        )
+        self.assertEqual(buffer_params["start_time"], ["1699999780"])
+        self.assertEqual(buffer_params["end_time"], ["1700000010"])
         self.assertNotIn("obstime", buffer_params)
         self.assertNotIn("pretty", buffer_params)
 

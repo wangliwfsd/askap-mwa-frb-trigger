@@ -69,7 +69,25 @@ askap-mwa-frb-trigger/
 The implementation follows the official [MWA Triggering web services documentation](https://mwatelescope.atlassian.net/wiki/spaces/MP/pages/24972656/Triggering+web+services):
 
 - `triggerbuffer` inherits pointing, frequency, and other settings from the current (or most recent) observation. It cannot supply a new pointing.
-- A finite `start_time` / `end_time` interval is used to save only historical buffer data. By default it starts `--past-seconds` before the candidate GPS time and ends at the candidate GPS time.
+- TriggerBuffer starts `--past-seconds` (120 seconds by default) before the GPS time converted from the candidate `cand_mjd`. It ends at the current GPS time plus `--handover-margin` (10 seconds by default). The margin prevents a gap while control passes to TriggerVCS; the subsequent all-sky capture covers later arrival at MWA frequencies for the configured `--obstime`.
+
+The TriggerBuffer bounds are calculated as:
+
+```text
+candidate_gps = UTC-MJD-to-GPS(cand_mjd)
+start_time    = max(0, candidate_gps - past_seconds)
+end_time      = current_gps_time + handover_margin
+```
+
+With the defaults:
+
+```text
+start_time = candidate_gps - 120 seconds
+end_time   = current_gps_time + 10 seconds
+```
+
+`candidate_gps` is only a conversion of the timestamp supplied in the candidate packet. The bridge does not reinterpret its reference frequency or apply a DM-based arrival-time correction.
+
 - `busy` returns `true` when the project cannot interrupt the schedule during the requested VCS duration.
 - `triggervcs` is called without `ra`, `dec`, `source`, `alt`, or `az`. The API defines this as all-sky mode with one dipole active on each tile.
 - The VCS call is made even when `busy=true`, so the authoritative trigger response and its error reason are recorded and logged.
@@ -94,7 +112,7 @@ This client always sends an explicit `pretend` value to both `triggerbuffer` and
 
 Without `--pretend`, an accepted CRACO candidate can cause real MWA actions. In this service the real workflow is:
 
-1. `triggerbuffer` saves the configured historical interval ending at the candidate time.
+1. `triggerbuffer` saves data from the configured interval before the candidate timestamp through the current time plus the handover margin.
 2. `busy` checks whether the project can interrupt the upcoming schedule.
 3. `triggervcs` requests a real all-sky voltage capture. It is attempted even when `busy=true`, so the authoritative rejection or success is recorded.
 4. `find` verifies each returned trigger ID, and the complete audit is written to CSV.
@@ -142,6 +160,7 @@ PROJECT_ID=your_project_id
 ```bash
 python3 udp_to_triggerbuffer.py 224.1.1.1:4900 \
   --past-seconds 120 \
+  --handover-margin 10 \
   --obstime 600 \
   --min-sn 20 \
   --min-dm 100 \
@@ -153,11 +172,17 @@ python3 udp_to_triggerbuffer.py 224.1.1.1:4900 \
 
 The command above uses pretend mode. To enable real triggering, use the same reviewed command without `--pretend`. The absence of the flag is the only pretend/real switch in this client.
 
-For local multicast testing:
+For local multicast testing only, when both the test sender and the bridge run
+on the same host and the sender transmits directly to `224.1.1.1`, route that
+multicast group through the loopback interface:
 
 ```bash
 sudo ip route add 224.1.1.1/32 dev lo
 ```
+
+Run this command on the local test host before starting the sender and bridge.
+It is not a CRACO production-deployment step. It is also unnecessary when a
+local test sender uses the unicast address `127.0.0.1`.
 
 ## 7. Deployment alongside ASKAP/CRACO
 
@@ -252,7 +277,7 @@ Review `deploy/systemd/udp-to-triggerbuffer.service` before installing it. At mi
 - the local `output/` directory exists and is writable by the service account;
 - `ExecStart` uses the selected Python environment;
 - the UDP address and port match CRACO;
-- `--past-seconds`, `--obstime`, S/N, DM, burst, and rate-limit values are approved;
+- `--past-seconds`, `--handover-margin`, `--obstime`, S/N, DM, burst, and rate-limit values are approved;
 - the service user can write `/opt/askap-mwa-frb-trigger/output/trigger_records.csv`.
 
 If the site uses a proxy or nonstandard endpoint paths, add all four reviewed options:
@@ -278,6 +303,7 @@ Run the bridge in the foreground. This example uses the optional independent env
   /opt/askap-mwa-frb-trigger/udp_to_triggerbuffer.py \
   224.1.1.1:4900 \
   --past-seconds 120 \
+  --handover-margin 10 \
   --obstime 600 \
   --min-sn 20 \
   --min-dm 100 \
@@ -296,7 +322,7 @@ Before proceeding, confirm:
 - expected candidates pass the filters;
 - logs show `pretend=true` for TriggerBuffer and TriggerVCS;
 - TriggerBuffer, Busy, TriggerVCS, and Find return the expected results;
-- candidate timestamps and historical buffer bounds are correct;
+- the TriggerBuffer start is `--past-seconds` before the GPS time converted from `cand_mjd`, and its end is the request-time GPS value plus the handover margin;
 - `output/trigger_records.csv` contains the two expected audit rows;
 - no real MWA observation was scheduled.
 
@@ -455,8 +481,8 @@ The second command may display raw server responses. Run it only in a private te
 | `--triggervcs-endpoint` | sibling of `--endpoint` | TriggerVCS URL |
 | `--show-endpoint` | `https://ws.mwatelescope.org/trigger/find` | Trigger-history Find lookup URL |
 | `--project-id` | `C001` | Interrupting MWA project |
-| `--past-seconds` | `120` | Historical buffer interval before candidate time |
-| `--use-start-zero` | off | Save everything currently available in the historical buffer |
+| `--past-seconds` | `120` | Seconds before the GPS time converted from `cand_mjd` to start TriggerBuffer |
+| `--handover-margin` | `10` | Seconds added to current GPS time to cover the TriggerBuffer-to-TriggerVCS handover |
 | `--obstime` | `600` | Busy look-ahead and all-sky VCS `exptime` |
 | `--creator` | `askap-mwa-frb-trigger` | Trigger history creator |
 | `--obsname` | `ASKAP_FRB` | VCS observation name |

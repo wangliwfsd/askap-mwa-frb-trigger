@@ -8,7 +8,7 @@ UDP candidate stream -> MWA buffer dump and all-sky VCS trigger
 secure_key is read from environment variable: TRIGGER_SECURE_KEY
 export TRIGGER_SECURE_KEY="your_secret_here"
 
-past dump seconds is configurable via --past-seconds
+TriggerBuffer coverage is configurable via --past-seconds and --handover-margin
 """
 
 import argparse
@@ -116,6 +116,15 @@ def mjd_to_gps_seconds(mjd: float) -> int:
 
     unix_utc = (mjd - MJD_UNIX_EPOCH) * 86400.0
     gps = unix_utc - UNIX_GPS_EPOCH + GPS_UTC_LEAP_SECONDS_FALLBACK
+    return int(round(gps))
+
+
+def current_gps_seconds() -> int:
+    """Return the current system time as integer GPS seconds."""
+    if _HAS_ASTROPY:
+        return int(round(Time.now().gps))
+
+    gps = time.time() - UNIX_GPS_EPOCH + GPS_UTC_LEAP_SECONDS_FALLBACK
     return int(round(gps))
 
 
@@ -264,10 +273,10 @@ class TriggerBufferWorker(threading.Thread):
         project_id: str,
         secure_key_env: str,
         past_seconds: int,
+        handover_margin: int,
         obstime: int,
         pretty: bool,
         pretend: bool,
-        use_start_time_zero: bool,
         min_trigger_interval_sec: float,
         min_sn: float = 20.0,
         min_dm: float = 0.0,
@@ -298,10 +307,10 @@ class TriggerBufferWorker(threading.Thread):
         self.project_id = project_id
         self.secure_key_env = secure_key_env
         self.past_seconds = int(past_seconds)
+        self.handover_margin = int(handover_margin)
         self.obstime = int(obstime)
         self.pretty = bool(pretty)
         self.pretend = bool(pretend)
-        self.use_start_time_zero = bool(use_start_time_zero)
         self.min_trigger_interval_sec = float(min_trigger_interval_sec)
         self.min_sn = float(min_sn)
         self.min_dm = float(min_dm)
@@ -347,11 +356,12 @@ class TriggerBufferWorker(threading.Thread):
         params = self._common_trigger_params()
         cand_mjd = task.fields[-1]
         cand_gps = mjd_to_gps_seconds(cand_mjd)
-        start_time = 0 if self.use_start_time_zero else max(0, cand_gps - self.past_seconds)
+        start_time = max(0, cand_gps - self.past_seconds)
+        end_time = current_gps_seconds() + self.handover_margin
 
-        # A finite end_time requests only historical buffered data. TriggerVCS
-        # below is responsible for future capture.
-        params.update({"start_time": int(start_time), "end_time": int(cand_gps)})
+        # Include historical data before the candidate timestamp and continue
+        # through the handover to TriggerVCS.
+        params.update({"start_time": int(start_time), "end_time": int(end_time)})
         return f"{self.endpoint}?{urlencode(params)}"
 
     def build_busy_url(self) -> str:
@@ -937,7 +947,9 @@ def main():
                     help="Environment variable name holding secure_key")
 
     ap.add_argument("--past-seconds", type=int, default=120,
-                    help="Seconds before candidate time to start buffer dump (used when --use-start-zero is false)")
+                    help="Seconds before the candidate timestamp to start TriggerBuffer (default: 120)")
+    ap.add_argument("--handover-margin", type=int, default=10,
+                    help="Seconds added to current GPS time for TriggerBuffer/VCS handover (default: 10)")
     ap.add_argument("--obstime", type=int, default=600,
                     help="All-sky VCS duration and Busy look-ahead in seconds (default: 600)")
     ap.add_argument("--creator", default="askap-mwa-frb-trigger",
@@ -946,11 +958,11 @@ def main():
                     help="Observation name recorded for TriggerVCS")
 
     ap.add_argument("--pretty", action="store_true", help="pretty=true")
-    ap.add_argument("--pretend", action="store_true", help="pretend=true (dry-run behavior on the trigger service)")
-
-    ap.add_argument("--use-start-zero", action="store_true",
-                    help="Save all currently available historical buffer data. "
-                         "Otherwise start at candidate_gps - past_seconds")
+    ap.add_argument(
+        "--pretend",
+        action="store_true",
+        help="Send pretend=true; validate without scheduling real MWA observations",
+    )
 
     ap.add_argument("--min-sn", type=float, default=20.0,
                     help="Minimum signal-to-noise ratio to forward a trigger (default: 20.0)")
@@ -993,8 +1005,11 @@ def main():
     )
     LOG.setLevel(logging.DEBUG if args.verbose else logging.INFO)
 
-    if args.past_seconds < 0 or args.obstime <= 0:
-        ap.error("--past-seconds must be >= 0 and --obstime must be > 0")
+    if args.past_seconds < 0 or args.handover_margin < 0 or args.obstime <= 0:
+        ap.error(
+            "--past-seconds and --handover-margin must be >= 0; "
+            "--obstime must be > 0"
+        )
 
     # Validate secure key exists early (fail fast)
     _ = get_secure_key_from_env(args.secure_key_env)
@@ -1019,10 +1034,10 @@ def main():
             project_id=args.project_id,
             secure_key_env=args.secure_key_env,
             past_seconds=args.past_seconds,
+            handover_margin=args.handover_margin,
             obstime=args.obstime,
             pretty=args.pretty,
             pretend=args.pretend,
-            use_start_time_zero=args.use_start_zero,
             min_trigger_interval_sec=args.min_trigger_interval,
             min_sn=args.min_sn,
             min_dm=args.min_dm,
